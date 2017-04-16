@@ -3,17 +3,6 @@ require "thread"
 require "json"
 require "yaml"
 
-config_file = File.expand_path("~/.gh-shorthand.yml")
-if !File.exist?(config_file)
-  abort "config file #{config_file} not found"
-end
-config = YAML.load(File.read(config_file))
-unless socket_path = config["socket_path"]
-  abort "no socket_path defined in config file"
-end
-
-DELAY = 10.0
-
 class MemoryStore
   def initialize
     @data = {}
@@ -46,7 +35,10 @@ class Result
   end
 end
 
+# for testing
 class UpcaseStore
+  DELAY = 2 # wait this long for results
+
   def initialize
     @store = MemoryStore.new
   end
@@ -72,49 +64,68 @@ class UpcaseStore
 
 end
 
-if File.exist?(socket_path)
-  File.unlink socket_path
-end
+class RPCServer
+  def initialize(socket_path, backend)
+    @socket_path = socket_path
+    cleanup
+    @socket = UNIXServer.new(socket_path)
+    @backend = backend
+  end
 
-server = UNIXServer.new(socket_path)
-store = UpcaseStore.new
-
-trap("INT") {
-  puts "exiting"
-  server.close
-  File.unlink(socket_path)
-  exit
-}
-trap("TERM") {
-  File.unlink(socket_path)
-  exit
-}
-
-Thread.abort_on_exception = true
-
-puts "server started on #{socket_path}"
-
-while s = server.accept do
-  Thread.new do
-    begin
-      input = s.gets.strip
-
-      log = "processing #{input.inspect}: "
-      result = store.process(input)
-      if result.ready?
-        log << "OK: #{result.value}"
-        s.puts "OK"
-        s.puts result.value
-      else
-        log << "PENDING for #{Time.now.to_f - result.value}"
-        s.puts "PENDING"
+  def run
+    while s = @socket.accept do
+      Thread.new do
+        begin
+          input = s.gets.strip
+          result = @backend.process(input)
+          if result.ready?
+            s.puts "OK"
+            s.puts result.value
+          else
+            s.puts "PENDING"
+          end
+        rescue Errno::EPIPE
+          # client closed the socket early
+        ensure
+          s.close
+        end
       end
+    end
+  rescue Errno::EBADF
+    # socket got cleaned up, but we're done anyway
+  end
 
-      puts log
-    rescue Errno::EPIPE => e
-      puts e.to_s
-    ensure
-      s.close
+  def stop
+    @socket.close
+  ensure
+    cleanup
+  end
+
+  def cleanup
+    if File.exist?(@socket_path)
+      File.unlink @socket_path
     end
   end
 end
+
+config_file = File.expand_path("~/.gh-shorthand.yml")
+if !File.exist?(config_file)
+  abort "config file #{config_file} not found"
+end
+config = YAML.load(File.read(config_file))
+unless socket_path = config["socket_path"]
+  abort "no socket_path defined in config file"
+end
+
+store = UpcaseStore.new
+server = RPCServer.new(socket_path, store)
+
+trap("INT") {
+  puts "exiting..."
+  server.stop
+}
+
+trap("TERM") { server.stop }
+
+puts "started gh-shorthand RPC server at #{socket_path}"
+server.run
