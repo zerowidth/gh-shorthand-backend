@@ -21,6 +21,14 @@ class MemoryStore
 end
 
 class Result
+  def self.ready(value)
+    new(ready: true, value: value)
+  end
+
+  def self.pending
+    new(ready: false)
+  end
+
   def initialize(ready:, value: nil)
     @ready = ready
     @value = value
@@ -49,19 +57,18 @@ class UpcaseStore
     when nil
       now = Time.now.to_f
       @store[input] = [:pending, now]
-      Result.new(ready: false, value: now)
+      Result.pending
     when :pending
       if Time.now.to_f - value > DELAY
         @store[input] = [:ready, input.upcase]
-        Result.new(ready: true, value: input.upcase)
+        Result.ready(input.upcase)
       else
-        Result.new(ready: false, value: value)
+        Result.pending
       end
     else
-      Result.new(ready: true, value: value)
+      Result.ready(value)
     end
   end
-
 end
 
 class RPCServer
