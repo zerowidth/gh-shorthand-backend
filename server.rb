@@ -80,6 +80,16 @@ class GraphQLProcessor
     }
   GRAPHQL
 
+  ISSUE_TITLE = <<~GRAPHQL
+    query IssueTitle($owner: String!, $name: String!, $number:Int!) {
+      repository(owner: $owner, name: $name) {
+        issueish(number:$number) {
+          title
+        }
+      }
+    }
+  GRAPHQL
+
   def initialize(api_token)
     @api_token = api_token
     @results = {}
@@ -114,6 +124,19 @@ class GraphQLProcessor
         else
           Result.error "owner/name not found in #{query}"
         end
+      when "issue"
+        owner, name = params.split("/", 2)
+        if owner && name
+          name, number = name.split("#", 2)
+          if name && number
+            @pending[query] = Thread.new { issue_title(owner, name, number) }
+            Result.pending
+          else
+            Result.error "issue number not specified in #{query}"
+          end
+        else
+          Result.error "owner/name not found in #{query}"
+        end
       else
         Result.error "unknown RPC query: #{request_type}"
       end
@@ -133,6 +156,25 @@ class GraphQLProcessor
       end
     else
       result
+    end
+  end
+
+  def issue_title(owner, name, number)
+    result = graphql_request(
+      ISSUE_TITLE, :owner => owner, :name => name, :number => number.to_i)
+    if result.ok?
+      data = result.value
+      if data["errors"]
+        Result.error data["errors"].first["message"]
+      elsif data["repository"]
+        if data["repository"]["issueish"]
+          Result.ready data["repository"]["issueish"]["title"]
+        else
+          Result.error "Issue or PR not found"
+        end
+      else
+        Result.error "Repository not found"
+      end
     end
   end
 
