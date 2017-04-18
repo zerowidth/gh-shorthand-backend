@@ -72,7 +72,7 @@ class GraphQLProcessor
 
   ENDPOINT = URI("https://api.github.com/graphql")
 
-  REPO_DESCRIPTION = <<-GRAPHQL
+  REPO_DESCRIPTION = <<~GRAPHQL
     query RepoDescription($owner: String!, $name: String!) {
       repository(owner: $owner, name: $name) {
         description
@@ -124,9 +124,10 @@ class GraphQLProcessor
     result = graphql_request(REPO_DESCRIPTION, :owner => owner, :name => name)
     if result.ok?
       data = result.value
-      if data["repository"]
-        output = {:description => data["repository"]["description"]}
-        Result.ready output.to_json
+      if data["errors"]
+        Result.error data["errors"].first["message"]
+      elsif data["repository"]
+        Result.ready data["repository"]["description"]
       else
         Result.error "Repository not found"
       end
