@@ -90,6 +90,26 @@ class GraphQLProcessor
     }
   GRAPHQL
 
+  ISSUE_SEARCH = <<~GRAPHQL
+    query IssueSearch($query:String!) {
+      search(query:$query, type:ISSUE, first:10) {
+        nodes {
+          __typename
+          ...on Issueish {
+            repository {
+              name
+              owner {
+                login
+              }
+            }
+            number
+            title
+          }
+        }
+      }
+    }
+  GRAPHQL
+
   def initialize(api_token)
     @api_token = api_token
     @results = {}
@@ -137,6 +157,9 @@ class GraphQLProcessor
         else
           Result.error "owner/name not found in #{query}"
         end
+      when "issuesearch"
+        @pending[query] = Thread.new { issue_search(params) }
+        Result.pending
       else
         Result.error "unknown RPC query: #{request_type}"
       end
@@ -174,6 +197,29 @@ class GraphQLProcessor
         end
       else
         Result.error "Repository not found"
+      end
+    end
+  end
+
+  def issue_search(query)
+    result = graphql_request(
+      ISSUE_SEARCH, :query => query)
+    if result.ok?
+      data = result.value
+      if data["errors"]
+        Result.error data["errors"].first["message"]
+      elsif data["search"]
+        results = data["search"]["nodes"].map do |node|
+          owner = node["repository"]["owner"]["login"]
+          name = node["repository"]["name"]
+          number = node["number"]
+          type = node["__typename"]
+          title = node["title"]
+          "#{owner}/#{name}:#{number}:#{type}:#{title}"
+        end
+        Result.ready results.join("\n")
+      else
+        Result.error "No search results"
       end
     end
   end
