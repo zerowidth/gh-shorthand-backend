@@ -1,9 +1,10 @@
+require "json"
+require "logger"
+require "net/http"
 require "socket"
 require "thread"
-require "json"
-require "yaml"
-require "net/http"
 require "uri"
+require "yaml"
 
 class MemoryStore
   def initialize
@@ -110,26 +111,27 @@ class GraphQLProcessor
     }
   GRAPHQL
 
-  def initialize(api_token)
+  def initialize(api_token, logger: nil)
     @api_token = api_token
     @results = {}
     @pending = {}
+    @logger = logger
   end
 
   def process(query)
     if result = @results[query]
-      puts "query #{query.inspect}: cached results found"
+      log "#{query.inspect}: cached"
       result
     elsif thread = @pending[query]
       if thread.alive?
-        puts "query #{query.inspect}: thread still pending"
+        log "#{query.inspect}: pending"
         Result.pending
       else
         @pending.delete(query)
         result = Result.new { thread.value }
         result = result.value if result.ok? # unwrap the result
         @results[query] = result
-        puts "query #{query.inspect}: thread finished: #{result.inspect}"
+        log "#{query.inspect}: finished"
         result
       end
     else
@@ -138,7 +140,7 @@ class GraphQLProcessor
       when "repo"
         owner, name = params.split("/", 2)
         if owner && name
-          puts "query #{query.inspect}: starting new thread"
+          log "#{query.inspect}: starting new thread"
           @pending[query] = Thread.new { repo_description owner, name }
           Result.pending
         else
@@ -149,6 +151,7 @@ class GraphQLProcessor
         if owner && name
           name, number = name.split("#", 2)
           if name && number
+            log "#{query.inspect}: starting new thread"
             @pending[query] = Thread.new { issue_title(owner, name, number) }
             Result.pending
           else
@@ -158,6 +161,7 @@ class GraphQLProcessor
           Result.error "owner/name not found in #{query}"
         end
       when "issuesearch"
+        log "#{query.inspect}: starting new thread"
         @pending[query] = Thread.new { issue_search(params) }
         Result.pending
       else
@@ -235,6 +239,12 @@ class GraphQLProcessor
       Result.error [res.code, res.body]
     end
   end
+
+  def log(msg)
+    if @logger
+      @logger.debug("GraphQLProcessor: " + msg)
+    end
+  end
 end
 
 # for testing
@@ -266,11 +276,12 @@ class UpcaseStore
 end
 
 class RPCServer
-  def initialize(socket_path, backend)
+  def initialize(socket_path, backend, logger: nil)
     @socket_path = socket_path
     cleanup
     @socket = UNIXServer.new(socket_path)
     @backend = backend
+    @logger = logger
   end
 
   # Public: start the RPC server and listen for new requests.
@@ -279,23 +290,21 @@ class RPCServer
       Thread.new do
         begin
           input = s.gets.strip
-          puts "processing: #{input}"
           result = @backend.process(input)
-          puts "got result #{result.inspect}"
           if result.ready?
-            puts "OK: #{result.value}"
+            log "OK: #{input}"
             s.puts "OK"
             s.puts result.value
           elsif result.error
-            puts "error: #{result.error}"
+            log "ERROR: #{input}: #{result.error}"
             s.puts "ERROR"
             s.puts result.error.to_s
           else
-            puts "pending"
+            log "PENDING: #{input}"
             s.puts "PENDING"
           end
         rescue Errno::EPIPE
-          puts "pipe closed"
+          log "pipe closed"
           # client closed the socket early
         rescue => e
           puts e
@@ -320,6 +329,12 @@ class RPCServer
       File.unlink @socket_path
     end
   end
+
+  def log(msg)
+    if @logger
+      @logger.info("RPCServer: " + msg)
+    end
+  end
 end
 
 if __FILE__ == $0
@@ -337,17 +352,19 @@ if __FILE__ == $0
   end
 
   # store = UpcaseStore.new
-  store = GraphQLProcessor.new(api_token)
-  server = RPCServer.new(socket_path, store)
+  logger = Logger.new(STDERR)
+  if ARGV.include?("--verbose") || ARGV.include?("-v")
+    logger.level = Logger::DEBUG
+  else
+    logger.level = Logger::INFO
+  end
+  store = GraphQLProcessor.new(api_token, logger: logger)
+  server = RPCServer.new(socket_path, store, logger: logger)
 
-  trap("INT") {
-    puts "exiting..."
-    server.stop
-  }
-
+  trap("INT") { server.stop }
   trap("TERM") { server.stop }
 
-  puts "started gh-shorthand RPC server at #{socket_path}"
+  logger.info "started gh-shorthand RPC server at #{socket_path}"
   server.run
 
 end
