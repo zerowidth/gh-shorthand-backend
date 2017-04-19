@@ -6,23 +6,6 @@ require "thread"
 require "uri"
 require "yaml"
 
-class MemoryStore
-  def initialize
-    @data = {}
-    @mutex = Thread::Mutex.new
-  end
-
-  def [](key)
-    @data[key]
-  end
-
-  def []=(key, value)
-    @mutex.synchronize do
-      @data[key] = value
-    end
-  end
-end
-
 class Result
   def self.ready(value)
     new(ready: true, value: value)
@@ -247,34 +230,6 @@ class GraphQLProcessor
   end
 end
 
-# for testing
-class UpcaseStore
-  DELAY = 2 # wait this long for results
-
-  def initialize
-    @store = MemoryStore.new
-  end
-
-  def process(input)
-    state, value = @store[input]
-    case state
-    when nil
-      now = Time.now.to_f
-      @store[input] = [:pending, now]
-      Result.pending
-    when :pending
-      if Time.now.to_f - value > DELAY
-        @store[input] = [:ready, input.upcase]
-        Result.ready(input.upcase)
-      else
-        Result.pending
-      end
-    else
-      Result.ready(value)
-    end
-  end
-end
-
 class RPCServer
   def initialize(socket_path, backend, logger: nil)
     @socket_path = socket_path
@@ -351,7 +306,6 @@ if __FILE__ == $0
     abort "no api_token defined in #{config_file}"
   end
 
-  # store = UpcaseStore.new
   logger = Logger.new(STDERR)
   if ARGV.include?("--verbose") || ARGV.include?("-v")
     logger.level = Logger::DEBUG
