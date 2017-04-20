@@ -90,6 +90,12 @@ class GraphQLProcessor
             number
             title
           }
+          ...on Issue {
+            state
+          }
+          ...on PullRequest {
+            state
+          }
         }
       }
     }
@@ -204,8 +210,9 @@ class GraphQLProcessor
           name = node["repository"]["name"]
           number = node["number"]
           type = node["__typename"]
+          state = node["state"]
           title = node["title"]
-          "#{owner}/#{name}:#{number}:#{type}:#{title}"
+          "#{owner}/#{name}:#{number}:#{type}:#{state}:#{title}"
         end
         Result.ready results.join("\n")
       else
