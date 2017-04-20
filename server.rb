@@ -68,6 +68,7 @@ class GraphQLProcessor
     query IssueTitle($owner: String!, $name: String!, $number:Int!) {
       repository(owner: $owner, name: $name) {
         issueish(number:$number) {
+          __typename
           title
         }
       }
@@ -178,7 +179,9 @@ class GraphQLProcessor
         Result.error data["errors"].first["message"]
       elsif data["repository"]
         if data["repository"]["issueish"]
-          Result.ready data["repository"]["issueish"]["title"]
+          type = data["repository"]["issueish"]["__typename"]
+          title = data["repository"]["issueish"]["title"]
+          Result.ready [type, title].join(":")
         else
           Result.error "Issue or PR not found"
         end
