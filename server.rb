@@ -70,6 +70,12 @@ class GraphQLProcessor
         issueish(number:$number) {
           __typename
           title
+          ...on Issue {
+            state
+          }
+          ...on PullRequest {
+            state
+          }
         }
       }
     }
@@ -183,11 +189,12 @@ class GraphQLProcessor
       data = result.value
       if data["errors"]
         Result.error data["errors"].first["message"]
-      elsif data["repository"]
-        if data["repository"]["issueish"]
-          type = data["repository"]["issueish"]["__typename"]
-          title = data["repository"]["issueish"]["title"]
-          Result.ready [type, title].join(":")
+      elsif repo = data["repository"]
+        if issueish = repo["issueish"]
+          type = issueish["__typename"]
+          state = issueish["state"]
+          title = issueish["title"]
+          Result.ready [type, state, title].join(":")
         else
           Result.error "Issue or PR not found"
         end
