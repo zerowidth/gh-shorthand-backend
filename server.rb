@@ -52,9 +52,53 @@ class Result
   end
 end
 
+# thread-safe in-memory cache with expiry
+class Cache
+  def initialize
+    @data = {}
+    @mutex = Thread::Mutex.new
+  end
+
+  def set(key, value, ttl:)
+    @mutex.synchronize do
+      @data[key] = [Time.now + ttl, value]
+    end
+  end
+
+  def get(key)
+    expiry, value = @data[key]
+    if expiry
+      if expiry > Time.now
+        return value
+      else
+        del key
+      end
+    end
+    nil
+  end
+
+  def fetch(key, ttl:, &value_block)
+    expiry, value = @data[key]
+    if expiry && expiry > Time.now
+      value
+    else
+      value = value_block.call
+      set key, value, ttl: ttl
+      value
+    end
+  end
+
+  def del(key)
+    @mutex.synchronize do
+      @data.delete key
+    end
+  end
+end
+
 class GraphQLProcessor
 
   ENDPOINT = URI("https://api.github.com/graphql")
+  TTL = 10 * 60
 
   REPO_DESCRIPTION = <<~GRAPHQL
     query RepoDescription($owner: String!, $name: String!) {
@@ -109,13 +153,13 @@ class GraphQLProcessor
 
   def initialize(api_token, logger: nil)
     @api_token = api_token
-    @results = {}
+    @results = Cache.new
     @pending = {}
     @logger = logger
   end
 
   def process(query)
-    if result = @results[query]
+    if result = @results.get(query)
       log "#{query.inspect}: cached"
       result
     elsif thread = @pending[query]
@@ -126,7 +170,7 @@ class GraphQLProcessor
         @pending.delete(query)
         result = Result.new { thread.value }
         result = result.value if result.ok? # unwrap the result
-        @results[query] = result
+        @results.set(query, result, ttl: TTL)
         log "#{query.inspect}: finished"
         result
       end
