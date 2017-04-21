@@ -127,7 +127,7 @@ class GraphQLProcessor
 
   ISSUE_SEARCH = <<~GRAPHQL
     query IssueSearch($query:String!) {
-      search(query:$query, type:ISSUE, first:10) {
+      search(query:$query, type:ISSUE, first:20) {
         nodes {
           __typename
           ...on Issueish {
