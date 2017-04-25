@@ -156,6 +156,8 @@ class GraphQLProcessor
     @results = Cache.new
     @pending = {}
     @logger = logger
+    @cleanup = Thread.new { cleanup }
+    @mutex = Thread::Mutex.new
   end
 
   def process(query)
@@ -163,17 +165,7 @@ class GraphQLProcessor
       log "#{query.inspect}: cached"
       result
     elsif thread = @pending[query]
-      if thread.alive?
-        log "#{query.inspect}: pending"
-        Result.pending
-      else
-        @pending.delete(query)
-        result = Result.new { thread.value }
-        result = result.value if result.ok? # unwrap the result
-        @results.set(query, result, ttl: TTL)
-        log "#{query.inspect}: finished"
-        result
-      end
+      check(query, thread)
     else
       request_type, params = query.split(":", 2)
       case request_type
@@ -181,7 +173,9 @@ class GraphQLProcessor
         owner, name = params.split("/", 2)
         if owner && name
           log "#{query.inspect}: starting new thread"
-          @pending[query] = Thread.new { repo_description owner, name }
+          @mutex.synchronize do
+            @pending[query] = Thread.new { repo_description owner, name }
+          end
           Result.pending
         else
           Result.error "owner/name not found in #{query}"
@@ -192,7 +186,9 @@ class GraphQLProcessor
           name, number = name.split("#", 2)
           if name && number
             log "#{query.inspect}: starting new thread"
-            @pending[query] = Thread.new { issue_title(owner, name, number) }
+            @mutex.synchronize do
+              @pending[query] = Thread.new { issue_title(owner, name, number) }
+            end
             Result.pending
           else
             Result.error "issue number not specified in #{query}"
@@ -202,10 +198,41 @@ class GraphQLProcessor
         end
       when "issuesearch"
         log "#{query.inspect}: starting new thread"
-        @pending[query] = Thread.new { issue_search(params) }
+        @mutex.synchronize do
+          @pending[query] = Thread.new { issue_search(params) }
+        end
         Result.pending
       else
         Result.error "unknown RPC query: #{request_type}"
+      end
+    end
+  end
+
+  def check(query, thread)
+    if thread.alive?
+      log "#{query.inspect}: pending"
+      Result.pending
+    else
+      result = nil
+      result = Result.new { thread.value }
+      result = result.value if result.ok? # unwrap the result
+      @mutex.synchronize do
+        @pending.delete(query)
+        @results.set(query, result, ttl: TTL)
+      end
+      log "#{query.inspect}: finished"
+      result
+    end
+  end
+
+  def cleanup
+    loop do
+      sleep 0.1
+      queries = @pending.keys
+      queries.each do |query|
+        if thread = @pending[query]
+          check query, thread
+        end
       end
     end
   end
