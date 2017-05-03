@@ -239,63 +239,52 @@ class GraphQLProcessor
 
   def repo_description(owner, name)
     result = graphql_request(REPO_DESCRIPTION, :owner => owner, :name => name)
-    if result.ok?
-      data = result.value
-      if data["errors"]
-        Result.error data["errors"].first["message"]
-      elsif data["repository"]
-        Result.ready data["repository"]["description"]
-      else
-        Result.error "Repository not found"
-      end
+    return result unless result.ok?
+    data = result.value
+    if data["repository"]
+      Result.ready data["repository"]["description"]
     else
-      result
+      Result.error "Repository not found"
     end
   end
 
   def issue_title(owner, name, number)
     result = graphql_request(
       ISSUE_TITLE, :owner => owner, :name => name, :number => number.to_i)
-    if result.ok?
-      data = result.value
-      if data["errors"]
-        Result.error data["errors"].first["message"]
-      elsif repo = data["repository"]
-        if issueish = repo["issueish"]
-          type = issueish["__typename"]
-          state = issueish["state"]
-          title = issueish["title"]
-          Result.ready [type, state, title].join(":")
-        else
-          Result.error "Issue or PR not found"
-        end
+    return result unless result.ok?
+    data = result.value
+    if repo = data["repository"]
+      if issue = repo["issueOrPullRequest"]
+        type = issue["__typename"]
+        state = issue["state"]
+        title = issue["title"]
+        Result.ready [type, state, title].join(":")
       else
-        Result.error "Repository not found"
+        Result.error "Issue or PR not found"
       end
+    else
+      Result.error "Repository not found"
     end
   end
 
   def issue_search(query)
     result = graphql_request(
       ISSUE_SEARCH, :query => query)
-    if result.ok?
-      data = result.value
-      if data["errors"]
-        Result.error data["errors"].first["message"]
-      elsif data["search"]
-        results = data["search"]["nodes"].map do |node|
-          owner = node["repository"]["owner"]["login"]
-          name = node["repository"]["name"]
-          number = node["number"]
-          type = node["__typename"]
-          state = node["state"]
-          title = node["title"]
-          "#{owner}/#{name}:#{number}:#{type}:#{state}:#{title}"
-        end
-        Result.ready results.join("\n")
-      else
-        Result.error "No search results"
+    return result unless result.ok?
+    data = result.value
+    if data["search"]
+      results = data["search"]["nodes"].map do |node|
+        owner = node["repository"]["owner"]["login"]
+        name = node["repository"]["name"]
+        number = node["number"]
+        type = node["__typename"]
+        state = node["state"]
+        title = node["title"]
+        "#{owner}/#{name}:#{number}:#{type}:#{state}:#{title}"
       end
+      Result.ready results.join("\n")
+    else
+      Result.error "No search results"
     end
   end
 
@@ -304,8 +293,13 @@ class GraphQLProcessor
     body = {"query" => query, "variables" => variables}.to_json
     res = Net::HTTP.post(ENDPOINT, body, headers)
     if res.code == "200"
-      data = JSON.parse(res.body)["data"]
-      Result.ready data
+      data = JSON.parse(res.body)
+      if data["errors"]
+        Result.error "GraphQL error: " + data["errors"].first["message"]
+      else
+        Result.ready data["data"]
+      end
+
     else
       Result.error [res.code, res.body]
     end
