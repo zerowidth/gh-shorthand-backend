@@ -218,7 +218,9 @@ class GraphQLProcessor
       result = result.value if result.ok? # unwrap the result
       @mutex.synchronize do
         @pending.delete(query)
-        @results.set(query, result, ttl: TTL)
+        if result.ok?
+          @results.set(query, result, ttl: TTL)
+        end
       end
       log "#{query.inspect}: finished"
       result
