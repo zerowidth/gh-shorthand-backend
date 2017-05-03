@@ -334,6 +334,11 @@ class RPCServer
             s.puts result.value
           elsif result.error
             log "ERROR: #{input}: #{result.error}"
+            if result.error.respond_to?(:backtrace)
+              result.error.backtrace.each do |line|
+                log "ERROR:   #{line}"
+              end
+            end
             s.puts "ERROR"
             s.puts result.error.to_s
           else
