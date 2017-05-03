@@ -111,14 +111,15 @@ class GraphQLProcessor
   ISSUE_TITLE = <<~GRAPHQL
     query IssueTitle($owner: String!, $name: String!, $number:Int!) {
       repository(owner: $owner, name: $name) {
-        issueish(number:$number) {
+        issueOrPullRequest(number:$number) {
           __typename
-          title
           ...on Issue {
             state
+            title
           }
           ...on PullRequest {
             state
+            title
           }
         }
       }
@@ -130,7 +131,8 @@ class GraphQLProcessor
       search(query:$query, type:ISSUE, first:20) {
         nodes {
           __typename
-          ...on Issueish {
+          ...on Issue {
+            state
             repository {
               name
               owner {
@@ -140,11 +142,16 @@ class GraphQLProcessor
             number
             title
           }
-          ...on Issue {
-            state
-          }
           ...on PullRequest {
             state
+            repository {
+              name
+              owner {
+                login
+              }
+            }
+            number
+            title
           }
         }
       }
