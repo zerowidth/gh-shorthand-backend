@@ -132,6 +132,7 @@ class GraphQLProcessor
       repository(owner:$owner,name:$name) {
         project(number:$number) {
           name
+          state
         }
       }
     }
@@ -142,6 +143,7 @@ class GraphQLProcessor
       organization(login:$login) {
         project(number:$number) {
           name
+          state
         }
       }
     }
@@ -150,11 +152,12 @@ class GraphQLProcessor
   REPO_PROJECTS = <<~GRAPHQL
     query RepoProjects($owner:String!, $name:String!) {
       repository(owner:$owner,name:$name) {
-        projects(first:20, states:[OPEN], orderBy:{field:UPDATED_AT,direction:DESC}) {
+        projects(first:20, orderBy:{field:UPDATED_AT,direction:DESC}) {
           nodes {
             number
             url
             name
+            state
           }
         }
       }
@@ -164,11 +167,12 @@ class GraphQLProcessor
   ORG_PROJECTS = <<~GRAPHQL
     query OrgProjects($login:String!) {
       organization(login:$login) {
-        projects(first:20, states:[OPEN], orderBy:{field:UPDATED_AT,direction:DESC}) {
+        projects(first:20, orderBy:{field:UPDATED_AT,direction:DESC}) {
           nodes {
             number
             url
             name
+            state
           }
         }
       }
@@ -354,7 +358,8 @@ class GraphQLProcessor
     if repo = data["repository"]
       if project = repo["project"]
         name = project["name"]
-        Result.ready name
+        state = project["state"]
+        Result.ready [state, name].join(":")
       else
         Result.error "Project not found"
       end
@@ -371,7 +376,8 @@ class GraphQLProcessor
     if repo = data["organization"]
       if project = repo["project"]
         name = project["name"]
-        Result.ready name
+        state = project["state"]
+        Result.ready [state, name].join(":")
       else
         Result.error "Project not found"
       end
@@ -387,9 +393,10 @@ class GraphQLProcessor
     if repo = data["repository"]
       results = repo["projects"]["nodes"].map do |project|
         number = project["number"]
+        state = project["state"]
         name = project["name"]
         url = project["url"]
-        [number, url, name].join("#") # both / and : used in url!
+        [number, state, url, name].join("#") # both / and : used in url!
       end
       Result.ready results.join("\n")
     else
@@ -404,9 +411,10 @@ class GraphQLProcessor
     if org = data["organization"]
       results = org["projects"]["nodes"].map do |project|
         number = project["number"]
+        state = project["state"]
         name = project["name"]
         url = project["url"]
-        [number, url, name].join("#") # both / and : used in url!
+        [number, state, url, name].join("#") # both / and : used in url!
       end
       Result.ready results.join("\n")
     else
