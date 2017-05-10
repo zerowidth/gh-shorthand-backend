@@ -215,6 +215,20 @@ class GraphQLProcessor
         else
           Result.error "owner/name not found in #{query}"
         end
+      when "repo_project"
+        owner, name, number = params.split("/", 3)
+        if owner && name && number
+          start_thread(query) { repo_project(owner, name, number) }
+        else
+          Result.error "owner, name, or number not specified in #{query}"
+        end
+      when "org_project"
+        login, number = params.split("/", 2)
+        if login && number
+          start_thread(query) { org_project(login, number) }
+        else
+          Result.error "login or number not specified in #{query}"
+        end
       when "issuesearch"
         start_thread(query) { issue_search(params) }
       else
@@ -289,6 +303,40 @@ class GraphQLProcessor
       end
     else
       Result.error "Repository not found"
+    end
+  end
+
+  def repo_project(owner, name, number)
+    result = graphql_request(
+      REPO_PROJECT_NAME, :owner => owner, :name => name, :number => number.to_i)
+    return result unless result.ok?
+    data = result.value
+    if repo = data["repository"]
+      if project = repo["project"]
+        name = project["name"]
+        Result.ready name
+      else
+        Result.error "Project not found"
+      end
+    else
+      Result.error "Repository not found"
+    end
+  end
+
+  def org_project(login, number)
+    result = graphql_request(
+      ORG_PROJECT_NAME, :login => login, :number => number.to_i)
+    return result unless result.ok?
+    data = result.value
+    if repo = data["organization"]
+      if project = repo["project"]
+        name = project["name"]
+        Result.ready name
+      else
+        Result.error "Project not found"
+      end
+    else
+      Result.error "Organization not found"
     end
   end
 
