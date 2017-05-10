@@ -199,11 +199,7 @@ class GraphQLProcessor
       when "repo"
         owner, name = params.split("/", 2)
         if owner && name
-          log "#{query.inspect}: starting new thread"
-          @mutex.synchronize do
-            @pending[query] = Thread.new { repo_description owner, name }
-          end
-          Result.pending
+          start_thread(query) { repo_description owner, name }
         else
           Result.error "owner/name not found in #{query}"
         end
@@ -212,11 +208,7 @@ class GraphQLProcessor
         if owner && name
           name, number = name.split("#", 2)
           if name && number
-            log "#{query.inspect}: starting new thread"
-            @mutex.synchronize do
-              @pending[query] = Thread.new { issue_title(owner, name, number) }
-            end
-            Result.pending
+            start_thread(query) { issue_title(owner, name, number) }
           else
             Result.error "issue number not specified in #{query}"
           end
@@ -224,15 +216,19 @@ class GraphQLProcessor
           Result.error "owner/name not found in #{query}"
         end
       when "issuesearch"
-        log "#{query.inspect}: starting new thread"
-        @mutex.synchronize do
-          @pending[query] = Thread.new { issue_search(params) }
-        end
-        Result.pending
+        start_thread(query) { issue_search(params) }
       else
         Result.error "unknown RPC query: #{request_type}"
       end
     end
+  end
+
+  def start_thread(query, &block)
+    log "#{query.inspect}: starting new thread"
+    @mutex.synchronize do
+      @pending[query] = Thread.new(&block)
+    end
+    Result.pending
   end
 
   def check(query, thread)
