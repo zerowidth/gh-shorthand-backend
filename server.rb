@@ -126,6 +126,26 @@ class GraphQLProcessor
     }
   GRAPHQL
 
+  REPO_PROJECT_NAME = <<~GRAPHQL
+    query RepoProjectName($owner:String!, $name:String!, $number:Int!) {
+      repository(owner:$owner,name:$name) {
+        project(number:$number) {
+          name
+        }
+      }
+    }
+  GRAPHQL
+
+  ORG_PROJECT_NAME = <<~GRAPHQL
+    query OrgProjectName($login:String!, $number:Int!) {
+      organization(login:$login) {
+        project(number:$number) {
+          name
+        }
+      }
+    }
+  GRAPHQL
+
   ISSUE_SEARCH = <<~GRAPHQL
     query IssueSearch($query:String!) {
       search(query:$query, type:ISSUE, first:20) {
