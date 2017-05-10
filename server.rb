@@ -98,7 +98,8 @@ end
 class GraphQLProcessor
 
   ENDPOINT = URI("https://api.github.com/graphql")
-  TTL = 10 * 60
+  TTL = 10 * 60 # 10 minutes
+  ERROR_TTL = 10 # let errors stick around for just a short time
 
   REPO_DESCRIPTION = <<~GRAPHQL
     query RepoDescription($owner: String!, $name: String!) {
@@ -257,6 +258,8 @@ class GraphQLProcessor
         @pending.delete(query)
         if result.ok?
           @results.set(query, result, ttl: TTL)
+        else
+          @results.set(query, result, ttl: ERROR_TTL)
         end
       end
       log "#{query.inspect}: finished"
@@ -423,6 +426,7 @@ class RPCServer
           # client closed the socket early
         rescue => e
           puts e
+          puts e.backtrace.join("\n")
         ensure
           s.close
         end
