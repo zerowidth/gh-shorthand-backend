@@ -127,11 +127,39 @@ class GraphQLProcessor
     }
   GRAPHQL
 
+  REPO_PROJECTS = <<~GRAPHQL
+    query RepoProjects($owner:String!, $name:String!) {
+      repository(owner:$owner,name:$name) {
+        projects(first:20, states:[OPEN], orderBy:{field:UPDATED_AT,direction:DESC}) {
+          nodes {
+            number
+            url
+            name
+          }
+        }
+      }
+    }
+  GRAPHQL
+
   REPO_PROJECT_NAME = <<~GRAPHQL
     query RepoProjectName($owner:String!, $name:String!, $number:Int!) {
       repository(owner:$owner,name:$name) {
         project(number:$number) {
           name
+        }
+      }
+    }
+  GRAPHQL
+
+  ORG_PROJECTS = <<~GRAPHQL
+    query OrgProjects($login:String!) {
+      organization(login:$login) {
+        projects(first:20, states:[OPEN], orderBy:{field:UPDATED_AT,direction:DESC}) {
+          nodes {
+            number
+            url
+            name
+          }
         }
       }
     }
@@ -223,6 +251,13 @@ class GraphQLProcessor
         else
           Result.error "owner, name, or number not specified in #{query}"
         end
+      when "repo_projects"
+        owner, name = params.split("/", 2)
+        if owner && name
+          start_thread(query) { repo_projects(owner, name) }
+        else
+          Result.error "owner or name not specified in #{query}"
+        end
       when "org_project"
         login, number = params.split("/", 2)
         if login && number
@@ -230,6 +265,8 @@ class GraphQLProcessor
         else
           Result.error "login or number not specified in #{query}"
         end
+      when "org_projects"
+        start_thread(query) { org_projects(params) }
       when "issuesearch"
         start_thread(query) { issue_search(params) }
       else
@@ -326,6 +363,23 @@ class GraphQLProcessor
     end
   end
 
+  def repo_projects(owner, name)
+    result = graphql_request(REPO_PROJECTS, :owner => owner, :name => name)
+    return result unless result.ok?
+    data = result.value
+    if repo = data["repository"]
+      results = repo["projects"]["nodes"].map do |project|
+        number = project["number"]
+        name = project["name"]
+        url = project["url"]
+        [number, url, name].join("#") # both / and : used in url!
+      end
+      Result.ready results.join("\n")
+    else
+      Result.error "Repository not found"
+    end
+  end
+
   def org_project(login, number)
     result = graphql_request(
       ORG_PROJECT_NAME, :login => login, :number => number.to_i)
@@ -338,6 +392,23 @@ class GraphQLProcessor
       else
         Result.error "Project not found"
       end
+    else
+      Result.error "Organization not found"
+    end
+  end
+
+  def org_projects(login)
+    result = graphql_request(ORG_PROJECTS, :login => login)
+    return result unless result.ok?
+    data = result.value
+    if org = data["organization"]
+      results = org["projects"]["nodes"].map do |project|
+        number = project["number"]
+        name = project["name"]
+        url = project["url"]
+        [number, url, name].join("#") # both / and : used in url!
+      end
+      Result.ready results.join("\n")
     else
       Result.error "Organization not found"
     end
