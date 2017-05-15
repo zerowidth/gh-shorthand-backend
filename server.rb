@@ -153,11 +153,13 @@ class GraphQLProcessor
     query RepoProjects($owner:String!, $name:String!) {
       repository(owner:$owner,name:$name) {
         projects(first:20, orderBy:{field:UPDATED_AT,direction:DESC}) {
-          nodes {
-            number
-            url
-            name
-            state
+          edges {
+            node {
+              number
+              url
+              name
+              state
+            }
           }
         }
       }
@@ -168,11 +170,13 @@ class GraphQLProcessor
     query OrgProjects($login:String!) {
       organization(login:$login) {
         projects(first:20, orderBy:{field:UPDATED_AT,direction:DESC}) {
-          nodes {
-            number
-            url
-            name
-            state
+          edges {
+            node {
+              number
+              url
+              name
+              state
+            }
           }
         }
       }
@@ -391,7 +395,8 @@ class GraphQLProcessor
     return result unless result.ok?
     data = result.value
     if repo = data["repository"]
-      results = repo["projects"]["nodes"].map do |project|
+      results = repo["projects"]["edges"].map do |node|
+        project = node["node"]
         number = project["number"]
         state = project["state"]
         name = project["name"]
@@ -409,7 +414,8 @@ class GraphQLProcessor
     return result unless result.ok?
     data = result.value
     if org = data["organization"]
-      results = org["projects"]["nodes"].map do |project|
+      results = org["projects"]["edges"].map do |node|
+        project = node["node"]
         number = project["number"]
         state = project["state"]
         name = project["name"]
